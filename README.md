@@ -41,12 +41,12 @@ Its primary function is to ensure that firewall rules are continually updated to
 **1.** Clone the repository:
 
 ```bash
-git clone https://github.com/opours/CustomRBLIntegrator-Ipfire.git
+git clone https://github.com/opours/CustomRBLIntegrator__fw-Ipfire.git
 ```
 
 **2.** Navigate to the script directory:
 ```bash
-cd CustomRBLIntegrator
+mv CustomRBLIntegrator__fw-Ipfire /usr/local/bin/CustomRBLIntegrator
 ```
 
 **3.** Ensure the script is executable:
