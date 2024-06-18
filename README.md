@@ -214,6 +214,7 @@ Members:
 ...
 ...
 ```
+When a packet is intercepted by the custom RBL, it will appear in the firewall logs (/var/log/messages) as **"CUSTRBLINTEGR_BLOCK:"**.
 
 ## Main functions
 
