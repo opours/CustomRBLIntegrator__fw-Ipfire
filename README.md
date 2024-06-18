@@ -40,8 +40,14 @@ Its primary function is to ensure that firewall rules are continually updated to
 
 **1.** Clone the repository:
 
+__Example:__
+Use Git command line
 ```bash
 git clone https://github.com/opours/CustomRBLIntegrator__fw-Ipfire.git
+```
+or Wget and Unzip command line
+``` bash
+wget https://github.com/opours/CustomRBLIntegrator__fw-Ipfire/archive/refs/heads/main.zip && unzip main.zip
 ```
 
 **2.** Navigate to the script directory:
