@@ -51,7 +51,7 @@ mv CustomRBLIntegrator__fw-Ipfire /usr/local/bin/CustomRBLIntegrator
 
 **3.** Ensure the script is executable:
 ```bash
-chmod +x CustomRBLIntegrator.sh
+chmod +x /usr/local/bin/CustomRBLIntegrator/CustomRBLIntegrator.sh
 ```
 
 **4.** Configure the script by editing the **CustomRBLIntegrator.conf** file.
