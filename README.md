@@ -54,7 +54,7 @@ mv CustomRBLIntegrator__fw-Ipfire /usr/local/bin/CustomRBLIntegrator
 chmod +x /usr/local/bin/CustomRBLIntegrator/CustomRBLIntegrator.sh
 ```
 
-**4.** Configure the script by editing the **CustomRBLIntegrator.conf** file.
+**4.** **Edit file CustomRBLIntegrator.conf** to enter the path(s) to your RBLs. See the file configuration section below
 
 
 ## Configuration
