@@ -52,7 +52,7 @@ wget https://github.com/opours/CustomRBLIntegrator__fw-Ipfire/archive/refs/heads
 
 **2.** Navigate to the script directory:
 ```bash
-mv CustomRBLIntegrator__fw-Ipfire /usr/local/bin/CustomRBLIntegrator
+mv CustomRBLIntegrator__fw-Ipfire-main /usr/local/bin/CustomRBLIntegrator
 ```
 
 **3.** Ensure the script is executable:
