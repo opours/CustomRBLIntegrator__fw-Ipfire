@@ -151,6 +151,70 @@ chmod 644 /var/ipfire/dma/auth.conf
     # Check custom RBLs, update reference file (-u) and update custom ipset list (-i) 
     30 20 * * *	/usr/local/bin/CustomRBLIntegrator/CustomRBLIntegrator.sh -ui >/dev/null 2>&1
 
+### After execution
+After execution, you can view the contents of Iptables to check that the rules have been added.
+here are the rules that should be present into Iptables:
+
+``` bash
+iptables -L -n --line-numbers > /tmp/newiptables.save && cat /tmp/newiptables.save
+
+...
+...
+...
+Chain BLOCKLISTIN (2 references)
+num  target     prot opt source               destination         
+1    RETURN     0    --  10.0.0.0/8           0.0.0.0/0           
+2    RETURN     0    --  172.16.0.0/12        0.0.0.0/0           
+3    RETURN     0    --  192.168.0.0/16       0.0.0.0/0           
+4    RETURN     0    --  100.64.0.0/10        0.0.0.0/0           
+5    RETURN     0    --  224.0.0.0/4          0.0.0.0/0           
+...
+17   CUSTOMRBLIN  0    --  0.0.0.0/0            0.0.0.0/0            match-set CustomRBLIntegrator_V4 src
+
+Chain BLOCKLISTOUT (2 references)
+num  target     prot opt source               destination         
+1    RETURN     0    --  0.0.0.0/0            10.0.0.0/8          
+2    RETURN     0    --  0.0.0.0/0            172.16.0.0/12       
+3    RETURN     0    --  0.0.0.0/0            192.168.0.0/16      
+4    RETURN     0    --  0.0.0.0/0            100.64.0.0/10       
+5    RETURN     0    --  0.0.0.0/0            224.0.0.0/4         
+...
+17   CUSTOMRBLOUT  0    --  0.0.0.0/0            0.0.0.0/0            match-set CustomRBLIntegrator_V4 dst
+...
+...
+...
+Chain CUSTOMRBLIN (1 references)
+num  target     prot opt source               destination         
+1    LOG        0    --  0.0.0.0/0            0.0.0.0/0            limit: avg 10/sec burst 5 LOG flags 0 level 4 prefix "CUSTRBLINTEGR_BLOCK: "
+2    DROP       0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain CUSTOMRBLOUT (1 references)
+num  target     prot opt source               destination         
+1    LOG        0    --  0.0.0.0/0            0.0.0.0/0            limit: avg 10/sec burst 5 LOG flags 0 level 4 prefix "CUSTRBLINTEGR_BLOCK: "
+2    DROP       0    --  0.0.0.0/0            0.0.0.0/0           
+
+
+```
+
+and check also into Ipset:
+
+``` bash
+ipset list CustomRBLIntegrator_V4 > /tmp/customipsetlist.view
+cat /tmp/customipsetlist.view | more
+
+Name: CustomRBLIntegrator_V4
+Type: hash:net
+Revision: 7
+Header: family inet hashsize 32768 maxelem 65536 bucketsize 12 initval 0xe25f8c5e
+Size in memory: 1767504
+References: 2
+Number of entries: 57904
+Members:
+...
+...
+...
+```
+
 ## Main functions
 
 `log_action`
