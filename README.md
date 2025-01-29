@@ -293,8 +293,8 @@ The script uses a PID file to prevent multiple instances from running simultaneo
 ## License
 This script is provided under the GPL v3 license WITHOUT ANY WARRANTY. It is free to use, modify, and redistribute as long as you mention the original author and adhere to the terms of the GPL v3 license. For more details, visit: GPL v3 License.
 
-## Author
-Mickaël DUBARD (www.opours.net)
+## Author(s)
+Mickaël DUBARD (www.opours.net) - AI assisted
 
-For any questions or support, please contact the author.
+For any questions or support, please contact Mickaël.
     
