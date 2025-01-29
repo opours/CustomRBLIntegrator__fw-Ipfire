@@ -110,7 +110,7 @@ echo ""
 case "$1" in
   start)
         ## add your 'start' rules here
-	# Run CustomRBLIntegrator
+	# Starting the CustomRBLIntegrator script
 	echo "   > Starting the CustomRBLIntegrator script. It may take a few minutes to complete..."
 	echo "   > Starting the CustomRBLIntegrator script. It may take a few minutes to complete..." >> "$LOG_FILE"
 	/bin/bash /usr/local/bin/CustomRBLIntegrator/CustomRBLIntegrator.sh -c >>"${LOG_FILE}" 2>&1
