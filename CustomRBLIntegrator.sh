@@ -1,30 +1,30 @@
 #!/bin/bash
 #
-##########################################################################################################
-##													##
-##					CustomRBLIntegrator						##
-##													##
-## Autor	: Mickaël DUBARD (www.opours.net)							##
-## Version	: 0.1											##
-## Created on	: 22.05.2024										##
-## Last update	: 18.06.2024										##
-## Description	:											##
-##		 Add the possibility of including Iptables rules for custom real-time blackhole lists	##
-##		 (RBLs) stored locally or imported via API, http or https. This script automate the  	##
-##		 process of downloading, updating, and enforcing network security policies based on	##
-##		 RBLs and other IP blacklist sources.							##
-##		 Its primary function is to ensure that the firewall rules are continually updated   	##
-##      	 to reflect the latest security intelligence, thereby protecting the network from	##
-##		 potentia threats identified by various blacklist providers.				##
-##													##
-## License	: GPL v3										##
-##		 This script is provided as is by its author, WITHOUT ANY WARRANTY. 			##
-##		 It is free to use, modify, and redistribute as long as you mention the original and 	##
-##		 adhere to the terms of the GPL v3 license. For more details on this license, 		##
-##		 please visit: https://www.gnu.org/licenses/gpl-3.0.en.html 				##
-##													##
-##													##
-##########################################################################################################
+##########################################################################################################################
+##                                                                                                                      ##
+##                  CustomRBLIntegrator                                                                                 ##
+##                                                                                                                      ##
+## Autor(s) : Mickaël DUBARD (www.opours.net) & AI assisted - https://github.com/opours/CustomRBLIntegrator__fw-Ipfire  ##
+## Version  : 0.2                                                                                                       ##
+## Created on   : 22.05.2024                                                                                            ##
+## Last update  : 29.01.2025                                                                                            ##
+## Description  :                                                                                                       ##
+##          Add the possibility of including Iptables rules for custom real-time blackhole lists                        ##
+##          (RBLs) stored locally or imported via API, http or https. This script automate the                          ##
+##          process of downloading, updating, and enforcing network security policies based on                          ##
+##          RBLs and other IP blacklist sources.                                                                        ##
+##          Its primary function is to ensure that the firewall rules are continually updated                           ##
+##          to reflect the latest security intelligence, thereby protecting the network from                            ##
+##          potentia threats identified by various blacklist providers.                                                 ##
+##                                                                                                                      ##
+## License  : GPL v3                                                                                                    ##
+##          This script is provided as is by its author, WITHOUT ANY WARRANTY.                                          ##
+##          It is free to use, modify, and redistribute as long as you mention the original and                         ##
+##          adhere to the terms of the GPL v3 license. For more details on this license,                                ##
+##          please visit: https://www.gnu.org/licenses/gpl-3.0.en.html                                                  ##
+##                                                                                                                      ##
+##                                                                                                                      ##
+##########################################################################################################################
 #
 # Determines the script path
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -98,7 +98,7 @@ log_error() {
 	error_occurred=true
 }
 #
-# Fonction pour supprimer le fichier PID
+# Function to delete the PID file
 cleanup() {
 	rm -f "${PIDFILE}"
 }
@@ -316,6 +316,8 @@ update_rbl_list() {
 	declare -A ipv6_erroneous_set
 	declare -A ip_counts
 	declare -A network_counts
+	declare -A ipv6_counts
+	declare -A ipv6_network_counts
 	#
 	declare -a valid_rbls
 	#
@@ -333,13 +335,29 @@ update_rbl_list() {
 			#
 			if [[ "$url" =~ ^https?:// ]]
 				then
-					log_action "     > __For Standard URLs:__ Downloading and processing URL [ $url ] from name [ $name ]"
+					log_action "     > __For Standard URLs:__ Checking availability of URL [ $url ] for name [ $name ]"
+					if ! curl -Is --connect-timeout 5 "$url" >/dev/null 2>&1
+						then
+							log_action "       - [WARNING] URL [ $url ] is not reachable. Skipping..."
+							continue
+					fi
+					log_action "       - [INFO] URL [ $url ] is reachable. Proceeding with download."
+					#
 					# It's a URL, use curl to download
+					log_action "     > __For Standard URLs:__ Downloading and processing URL [ $url ] from name [ $name ]"
 					rbl_data=$(curl -s "$url" | grep -vP '^(#|$)')
 					rbl_type="standard URL"
 				else
-					log_action "     > __For Local RBL Files:__ Downloading and processing file [ $url ] from name [ $name ]"
+					log_action "     > __For Local RBL Files:__ Checking availability of file [ $url ] for name [ $name ]"
+					if [ ! -f "$url" ]
+						then
+							log_action "       - [WARNING] File [ $url ] does not exist. Skipping..."
+							continue
+					fi
+					log_action "       - [INFO] File [ $url ] is accessible. Proceeding with processing."
+
 					# It's a local file, use cat to read
+					log_action "     > __For Local RBL Files:__ Downloading and processing file [ $url ] from name [ $name ]"
 					rbl_data=$(cat "$url" | grep -vP '^(#|$)')
 					rbl_type="local file"
 			fi
@@ -378,57 +396,67 @@ update_rbl_list() {
 	for api_info in "${API_URLS[@]}"
 		do
 			IFS='|' read -r url args name <<< "$api_info"
-			log_action "     > __For API URLs:__ Downloading and processing URL [ $url ] from name [ $name ] with args [ $args ]"
-			temp_file="$TEMP_RBL_DIR/${name// /_}.txt"
-			#
-			# Split args into an array
-			read -r -a curl_args <<< "$args"
-			#
-			# Combine URL and args for curl command
-			curl_command="curl -s -G ${curl_args[*]} \"$url\" -o \"$temp_file\""
-			#
-			# Log the command for debugging purposes
-			log_action "       - Run command [ $curl_command ]"
-			#
-			# Execute the command
-			eval $curl_command
-			#
-			if [[ -s "$temp_file" ]]
+			log_action "     > __For API URLs:__ Checking availability of URL [ $url ] for name [ $name ]"
+
+			# Check if the URL is reachable
+			if curl -Is --connect-timeout 5 "$url" >/dev/null 2>&1
 				then
-					rbl_data=$(cat "$temp_file")
-					#
-					# Filter only IP addresses and subnets
-					grep -vP '^(#|$)' "$temp_file" > "${temp_file}.filtered"
-					#
-					# Log erroneous subnets
-					log_action "       - Log erroneous IPs and/or subnets in [ $name ] RBL..."
-					erroneous_count=$(filter_erroneous_ips_subnets "${temp_file}.filtered" "$name" "${VALID_IPV4_FILE}" "${ERRONEOUS_IPV4_FILE}" "${VALID_IPV6_FILE}" "${ERRONEOUS_IPV6_FILE}")
-					log_action "         - Found [ $erroneous_count ] erroneous subnets in [ $name ] RBL"
-					#
-					# Count the number of occurrences in the resulting file for IPs and subnets
-					ip_counts[$name]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}(?=\s|$)' "${temp_file}.filtered" | wc -l)
-					network_counts[$name]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}/([1-9]|[1-2][0-9]|3[0-2])(?=\s|$)' "${temp_file}.filtered" | wc -l)
-					ipv6_counts[$name]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)$' "${temp_file}.filtered" | wc -l)
-					ipv6_network_counts[$name]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$' "${temp_file}.filtered" | wc -l)
-					#
-					valid_rbls+=("$name")
-					log_action "       - Success: Processed for [ $name ] with ${ip_counts[$name]} IPv4 IPs, ${network_counts[$name]} IPv4 networks, ${ipv6_counts[$name]} IPv6 IPs, and ${ipv6_network_counts[$name]} IPv6 networks"
-					#
+					log_action "       - URL [ $url ] is reachable. Proceeding with download..."
+					temp_file="$TEMP_RBL_DIR/${name// /_}.txt"
+
+					# Split args into an array
+					read -r -a curl_args <<< "$args"
+
+					# Combine URL and args for curl command
+					curl_command="curl -s -G ${curl_args[*]} \"$url\" -o \"$temp_file\""
+
+					# Log the command for debugging purposes
+					log_action "       - Run command [ $curl_command ]"
+
+					# Execute the command
+					eval $curl_command
+
+					if [[ -s "$temp_file" ]]
+						then
+							rbl_data=$(cat "$temp_file")
+							#
+							# Filter only IP addresses and subnets
+							grep -vP '^(#|$)' "$temp_file" > "${temp_file}.filtered"
+							#
+							# Log erroneous subnets
+							log_action "       - Log erroneous IPs and/or subnets in [ $name ] RBL..."
+							erroneous_count=$(filter_erroneous_ips_subnets "${temp_file}.filtered" "$name" "${VALID_IPV4_FILE}" "${ERRONEOUS_IPV4_FILE}" "${VALID_IPV6_FILE}" "${ERRONEOUS_IPV6_FILE}")
+							log_action "         - Found [ $erroneous_count ] erroneous subnets in [ $name ] RBL"
+							#
+							# Count the number of occurrences in the resulting file for IPs and subnets
+							ip_counts[$name]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}(?=\s|$)' "${temp_file}.filtered" | wc -l)
+							network_counts[$name]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}/([1-9]|[1-2][0-9]|3[0-2])(?=\s|$)' "${temp_file}.filtered" | wc -l)
+							ipv6_counts[$name]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)$' "${temp_file}.filtered" | wc -l)
+							ipv6_network_counts[$name]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$' "${temp_file}.filtered" | wc -l)
+							#
+							valid_rbls+=("$name")
+							log_action "       - Success: Processed for [ $name ] with ${ip_counts[$name]} IPv4 IPs, ${network_counts[$name]} IPv4 networks, ${ipv6_counts[$name]} IPv6 IPs, and ${ipv6_network_counts[$name]} IPv6 networks"
+							#
+						else
+							log_action "       - [WARNING] Failed to download or process $url from [ $name ]"
+							error_in_download=true
+							continue
+					fi
 				else
-					log_action "       - [WARNING] Failed to download or process $url from [ $name ]"
-					error_in_download=true
+					log_action "       - [WARNING] URL [ $url ] is not reachable. Skipping..."
 					continue
 			fi
 			log_action ""
 			log_action "----------"
 	done
-	#
-	if [ ${#valid_rbls[@]} -eq 0 ]
-		then
-			log_action "     > [ABORTING] No valid RBLs processed successfully!"
-			trap cleanup EXIT
-			exit 1 # Return with error
+
+	# Check if any valid RBLs were processed
+	if [ ${#valid_rbls[@]} -eq 0 ]; then
+		log_action "     > [ABORTING] No valid RBLs processed successfully!"
+		trap cleanup EXIT
+		exit 1 # Return with error
 	fi
+
 	#
 	#
 	# Merge the IPV4 and IPV6 lists into a single custom RBL list, keeping only the IPs and subnets without the RBL name 
@@ -523,7 +551,7 @@ update_rbl_list() {
 	for rbl_name in "${active_ipblocklist_sets[@]}"; do
 	file="$IPBLOCKLIST_CONF_DIR/$rbl_name.conf"
 	if [ -f "$file" ]; then
-		# Créer un fichier temporaire pour stocker les résultats du grep
+		# Create a temporary file to store grep results
 		temp_file=$(mktemp)
 		grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?|([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}(/[0-9]{1,3})?' "$file" > "$temp_file"
 		#
@@ -532,7 +560,7 @@ update_rbl_list() {
 		initial_counts=$(count_ips_and_subnets "$temp_file")
 		log_action "       - RBL name [ $rbl_name ]:  $initial_counts"
 		#
-		# Supprimer le fichier temporaire
+		# Delete temporary file
 		rm -f "$temp_file"
 	fi
 	log_action ""
@@ -568,6 +596,18 @@ update_rbl_list() {
 					fi
 					for rbl_name in "${active_ipblocklist_sets[@]}"
 						do
+							if [[ ! "$rbl_name" =~ ^[a-zA-Z0-9_-]+$ ]]
+								then
+									log_action "[ERROR] Invalid RBL name: $rbl_name. Skipping."
+									echo "[ERROR] Invalid RBL name: $rbl_name. Skipping."
+									continue
+							fi
+							log_action ""
+							log_action "----------"
+							log_action "[INFO] Processing RBL name: $rbl_name."
+							echo ""
+							echo "----------"
+							echo "[INFO] Processing RBL name: $rbl_name."
 							file="$IPBLOCKLIST_CONF_DIR/$rbl_name.conf"
 							if [ -f "$file" ]
 								then
@@ -589,12 +629,19 @@ update_rbl_list() {
 									# Concatenate valid IPv4 and IPv6 files in a temporary file with RBL names
 									cat "${VALID_TIERCE_IPV4_FILE}" "${VALID_TIERCE_IPV6_FILE}" >> "${TEMP_RBL_DIR}/merged_rbl_valid_tierce.tmp"
 									#
-									# Count the number of occurrences in the resulting file for IPs and subnets
-									ip_counts[$rbl_name]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}(?=\s|$)' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
-									network_counts[$rbl_name]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}/([1-9]|[1-2][0-9]|3[0-2])(?=\s|$)' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
-									ipv6_counts[$rbl_name]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)$' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
-									ipv6_network_counts[$rbl_name]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
-									#
+									# Initialize counts for the RBL name
+									ip_counts["$rbl_name"]=0
+									network_counts["$rbl_name"]=0
+									ipv6_counts["$rbl_name"]=0
+									ipv6_network_counts["$rbl_name"]=0
+
+									# Count the occurrences in the resulting file for IPs and subnets
+									ip_counts["$rbl_name"]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}(?=\s|$)' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
+									network_counts["$rbl_name"]=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}/([1-9]|[1-2][0-9]|3[0-2])(?=\s|$)' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
+									ipv6_counts["$rbl_name"]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)$' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
+									ipv6_network_counts["$rbl_name"]=$(grep -oP '^(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:)/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$' "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" | wc -l)
+
+									# Log the results
 									log_action "       - Success: Processed for [ $rbl_name ] with ${ip_counts[$rbl_name]} IPv4 IPs, ${network_counts[$rbl_name]} IPv4 networks, ${ipv6_counts[$rbl_name]} IPv6 IPs, and ${ipv6_network_counts[$rbl_name]} IPv6 networks"
 									rbl_tierce_merged_count=$(cat "${TEMP_RBL_DIR}/merged_rbl_valid_tierce.tmp" 2>/dev/null | wc -l)
 									#
@@ -602,19 +649,31 @@ update_rbl_list() {
 										then
 											echo "IPs and subnets count for tierce RBL [ $rbl_name ]: ${ip_counts[$rbl_name]} IPv4 IPs, ${network_counts[$rbl_name]} IPv4 networks, ${ipv6_counts[$rbl_name]} IPv6 IPs, and ${ipv6_network_counts[$rbl_name]} IPv6 networks" >> "${GLOBAL_INFO_FILE}"
 									fi
-									ip_counts[$rbl_name]=0
-									network_counts[$rbl_name]=0
-									ipv6_counts[$rbl_name]=0
-									ipv6_network_counts[$rbl_name]=0
+									#
+									# Reset counts for the current RBL name
+									ip_counts["$rbl_name"]=0
+									network_counts["$rbl_name"]=0
+									ipv6_counts["$rbl_name"]=0
+									ipv6_network_counts["$rbl_name"]=0
+									#
 									# Delete the temporary intermediate file
-									[ -f "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" ] && rm "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp"
+									if [ -f "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp" ]; then
+										log_action "   > Delete the temporary intermediate file: ${TEMP_RBL_DIR}/$rbl_name-filtered.tmp..."
+										echo "   > Delete the temporary intermediate file: ${TEMP_RBL_DIR}/$rbl_name-filtered.tmp..."
+										rm "${TEMP_RBL_DIR}/$rbl_name-filtered.tmp"
+									else
+										log_action "   > No temporary file found to delete: ${TEMP_RBL_DIR}/$rbl_name-filtered.tmp"
+										echo "   > No temporary file found to delete: ${TEMP_RBL_DIR}/$rbl_name-filtered.tmp"
+									fi
 								else
 									log_action "       - [ WARNING] Configuration file for Ipblocklist service [ $file ] not found for active ipset rule [ $rbl_name ]"
 							fi
-							log_action ""
-							log_action "----------"
 					done
 					#
+					log_action ""
+					log_action ""
+					log_action "> Count the number of occurrences in the resulting file (${TEMP_RBL_DIR}/merged_rbl_valid_tierce.tmp)for IPs and subnets..."
+					echo "> Count the number of occurrences in the resulting file (${TEMP_RBL_DIR}/merged_rbl_valid_tierce.tmp)for IPs and subnets..."
 					# Count the number of occurrences in the resulting file for IPs and subnets
 					ip_counts_global_tierce_RBL=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}(?=\s|$)' "${TEMP_RBL_DIR}/merged_rbl_valid_tierce.tmp" | wc -l)
 					network_counts_global_tierce_RBL=$(grep -oP '^[0-9]{1,3}(\.[0-9]{1,3}){3}/([1-9]|[1-2][0-9]|3[0-2])(?=\s|$)' "${TEMP_RBL_DIR}/merged_rbl_valid_tierce.tmp" | wc -l)
@@ -708,6 +767,49 @@ update_rbl_list() {
 	[ -f "${TMP_FILE_WITH_RBLS}" ] && rm "${TMP_FILE_WITH_RBLS}"
 	[ -f "${SORTED_NEW_IPS}" ] && rm "${SORTED_NEW_IPS}"
 	#
+}
+#
+clean_iptables_rules() {
+	local ipset_name=$1
+
+	# Checking the ipset_name parameter
+	if [ -z "$ipset_name" ]; then
+		log_error "IPSET name is empty. Aborting clean_iptables_rules."
+		return 1
+	fi
+
+	log_action "     > Cleaning iptables rules for IPSET $ipset_name"
+
+	# List of parent channels to check
+	local parent_chains=(
+		"$IPV4_IPTABLES_PARENT_CUSTOM_IN_CHAIN"
+		"$IPV4_IPTABLES_PARENT_CUSTOM_OUT_CHAIN"
+		"$IPV6_IPTABLES_PARENT_CUSTOM_IN_CHAIN"
+		"$IPV6_IPTABLES_PARENT_CUSTOM_OUT_CHAIN"
+	)
+
+	for chain in "${parent_chains[@]}"; do
+		# Check if the chain exists
+		if ! iptables -L "$chain" &>/dev/null; then
+			log_action "       - Parent chain $chain does not exist. Skipping."
+			continue
+		fi
+
+		log_action "       - Inspecting parent chain: $chain"
+
+		# Retrieve line numbers for rules referencing $ipset_name
+		local rules=$(iptables -L "$chain" -n --line-numbers | grep -E "match-set $ipset_name (src|dst)" | awk '{print $1}' | sort -r)
+
+		# Delete the corresponding rules starting from the end
+		for rule in $rules; do
+			log_action "       - Deleting rule $rule in parent chain $chain"
+			iptables -D "$chain" "$rule" || {
+				log_error "       - Failed to delete rule $rule in parent chain $chain"
+			}
+		done
+	done
+
+	log_action "     > Completed cleaning iptables rules for IPSET $ipset_name"
 }
 #
 # Function to ensure iptables child chain exists and add rules to it
@@ -879,60 +981,88 @@ check_update_iptables_rules() {
 #
 # Updating IPSET rules...
 update_ipset() {
-	log_action "       > Delete current list for $IPV4_IPSET_NAME and $IPV6_IPSET_NAME"
-	if [ "$network_type" == "ipv4" ] || [ "$network_type" == "dual" ]
-		then
-			ipset flush $IPV4_IPSET_NAME >> "${LOG_FILE}" 2>&1
+	log_action "       > Recreating IPSET tables for $IPV4_IPSET_NAME and $IPV6_IPSET_NAME"
+	log_action "         - Calcul IPSET_MAX_ELEM and IPSET_HASH_SIZE based on $REFERENCE_FILE..."
+	total_entries=$(grep -vP '^(#|$)' "$REFERENCE_FILE" | wc -l)
+	IPSET_MAX_ELEM=$((total_entries + 1000)) # Ajout d'une marge
+	IPSET_HASH_SIZE=$(awk 'BEGIN{for(i=1;i<65536;i*=2)if(i>='$((IPSET_MAX_ELEM / 8))') {print i; break}}')
+	log_action "           - Found $total_entries entries into $REFERENCE_FILE...IPSET_MAX_ELEM value is: $IPSET_MAX_ELEM and IPSET_HASH_SIZE value is: $IPSET_HASH_SIZE"
+	# Recreate IPV4_IPSET
+	if [ "$network_type" == "dual" ] || [ "$network_type" == "ipv4" ]; then
+		if ipset list "$IPV4_IPSET_NAME" &>/dev/null; then
+			log_action "       > Destroying existing IPSET $IPV4_IPSET_NAME"			
+			# Clean up associated rules in iptables
+			log_action "       - Clean existing IPSET $IPV4_IPSET_NAME..."
+			clean_iptables_rules "$IPV4_IPSET_NAME"
+			
+			# Delete all
+			log_action "     - Flush $IPV4_IPSET_NAME..."
+			ipset flush "$IPV4_IPSET_NAME" &>/dev/null || true
+			log_action "     - Destroy $IPV4_IPSET_NAME..."
+			ipset destroy "$IPV4_IPSET_NAME" &>/dev/null || {
+				log_error "         - Failed to destroy $IPV4_IPSET_NAME. Ensure it is not in use by iptables."
+				exit 1
+			}
+		fi
+		log_action "       > Creating IPSET $IPV4_IPSET_NAME. Command is: ipset create $IPV4_IPSET_NAME hash:net family inet hashsize $IPSET_HASH_SIZE maxelem $IPSET_MAX_ELEM"
+		ipset create $IPV4_IPSET_NAME hash:net family inet hashsize $IPSET_HASH_SIZE maxelem $IPSET_MAX_ELEM >> "${LOG_FILE}" 2>&1
 	fi
-	if [ "$network_type" == "ipv6" ] || [ "$network_type" == "dual" ]
-		then
-			ipset flush $IPV6_IPSET_NAME >> "${LOG_FILE}" 2>&1
+
+	# Recreate IPV6_IPSET
+	if [ "$network_type" == "dual" ] || [ "$network_type" == "ipv6" ]; then
+		if ipset list "$IPV6_IPSET_NAME" &>/dev/null; then
+			log_action "       > Destroying existing IPSET $IPV6_IPSET_NAME"
+			
+			# Clean up associated rules in iptables
+			log_action "       - Clean existing IPSET $IPV6_IPSET_NAME..."
+			clean_iptables_rules "$IPV6_IPSET_NAME"
+			
+			# Delete all
+			log_action "       - Flush $IPV6_IPSET_NAME..."
+			ipset flush "$IPV6_IPSET_NAME" &>/dev/null || true
+			log_action "       - Destroy $IPV6_IPSET_NAME..."
+			ipset destroy "$IPV6_IPSET_NAME" &>/dev/null || {
+				log_error "         - Failed to destroy $IPV6_IPSET_NAME. Ensure it is not in use by iptables."
+				exit 1
+			}
+		fi
+		log_action "       > Creating IPSET $IPV6_IPSET_NAME. Command is: ipset create $IPV6_IPSET_NAME hash:net family inet hashsize $IPSET_HASH_SIZE maxelem $IPSET_MAX_ELEM"
+		ipset create $IPV6_IPSET_NAME hash:net family inet hashsize $IPSET_HASH_SIZE maxelem $IPSET_MAX_ELEM >> "${LOG_FILE}" 2>&1
 	fi
-	#
-	log_action "       > Add new IPs to $IPV4_IPSET_NAME and $IPV6_IPSET_NAME..."
+
+	# Add new IPs to IPSET tables from the REFERENCE_FILE
+	log_action "       > Adding new IPs to $IPV4_IPSET_NAME and $IPV6_IPSET_NAME from the reference file"
 	total_lines=$(grep -vP '^(#|$)' "${REFERENCE_FILE}" | wc -l)
 	current_line=0
-	#
-	grep -vP '^(#|$)' "${REFERENCE_FILE}" | while read -r ip
-		do
-			if [[ "$ip" =~ : ]]
-				then
-					if [ "$network_type" == "ipv6" ] || [ "$network_type" == "dual" ]
-						then
-							((current_line++))
-							printf "\r\033[K> Adding IPv6 to custom ipset RBL list [ $IPV6_IPSET_NAME ] - Processing line %d/%d: %s" "$current_line" "$total_lines" "$ip"
-							# Force immediate display
-							echo -n ""
-							ipset add "$IPV6_IPSET_NAME" "$ip" >> "${LOG_FILE}" 2>&1
-					fi
-				else
-					if [ "$network_type" == "ipv4" ] || [ "$network_type" == "dual" ]
-						then
-							((current_line++))
-							printf "\r\033[K> Adding IPv4 to custom ipset RBL list [ $IPV4_IPSET_NAME ] - Processing line %d/%d: %s" "$current_line" "$total_lines" "$ip"
-							# Force immediate display
-							echo -n ""
-							ipset add "$IPV4_IPSET_NAME" "$ip" >> "${LOG_FILE}" 2>&1
-					fi
+
+	grep -vP '^(#|$)' "${REFERENCE_FILE}" | while read -r ip; do
+		if [[ "$ip" =~ : ]]; then
+			if [ "$network_type" == "ipv6" ] || [ "$network_type" == "dual" ]; then
+				((current_line++))
+				printf "\r\033[K> Adding IPv6 to custom IPSET RBL list [ $IPV6_IPSET_NAME ] - Processing line %d/%d: %s" "$current_line" "$total_lines" "$ip"
+				ipset add "$IPV6_IPSET_NAME" "$ip" >> "${LOG_FILE}" 2>&1
 			fi
+		else
+			if [ "$network_type" == "ipv4" ] || [ "$network_type" == "dual" ]; then
+				((current_line++))
+				printf "\r\033[K> Adding IPv4 to custom IPSET RBL list [ $IPV4_IPSET_NAME ] - Processing line %d/%d: %s" "$current_line" "$total_lines" "$ip"
+				ipset add "$IPV4_IPSET_NAME" "$ip" >> "${LOG_FILE}" 2>&1
+			fi
+		fi
 	done
-	#
-	if [ "$network_type" == "ipv4" ] || [ "$network_type" == "dual" ]
-		then
-			log_action "     > Save ipset name [ $IPV4_IPSET_NAME ] to ipset file [ ${IPV4_IPSET_SAVE_FILE} ]..."
-			ipset save $IPV4_IPSET_NAME > $IPV4_IPSET_SAVE_FILE 2>> "${LOG_FILE}"
-			log_action "     > Restore ipset name [ $IPV4_IPSET_NAME ] from ipset file [ ${IPV4_IPSET_SAVE_FILE} ]..."
-			ipset restore -! < ${IPV4_IPSET_SAVE_FILE} 2>> "${LOG_FILE}"
+
+	# Save IPSET tables to files (optional, can be omitted)
+	if [ "$network_type" == "ipv4" ] || [ "$network_type" == "dual" ]; then
+		log_action "     > Save IPSET name [ $IPV4_IPSET_NAME ] to IPSET file [ ${IPV4_IPSET_SAVE_FILE} ]"
+		ipset save "$IPV4_IPSET_NAME" > "$IPV4_IPSET_SAVE_FILE" 2>> "${LOG_FILE}"
 	fi
-	#
-	if [ "$network_type" == "ipv6" ] || [ "$network_type" == "dual" ]
-		then
-			log_action "     > Save ipset name [ $IPV6_IPSET_NAME ] to ipset file [ ${IPV6_IPSET_SAVE_FILE} ]..."
-			ipset save $IPV6_IPSET_NAME > ${IPV6_IPSET_SAVE_FILE} 2>> "${LOG_FILE}"
-			log_action "     > Restore ipset name [ $IPV6_IPSET_NAME ] from ipset file [ ${IPV6_IPSET_SAVE_FILE} ]..."
-			ipset restore -! < ${IPV6_IPSET_SAVE_FILE} 2>> "${LOG_FILE}"
+
+	if [ "$network_type" == "ipv6" ] || [ "$network_type" == "dual" ]; then
+		log_action "     > Save IPSET name [ $IPV6_IPSET_NAME ] to IPSET file [ ${IPV6_IPSET_SAVE_FILE} ]"
+		ipset save "$IPV6_IPSET_NAME" > "$IPV6_IPSET_SAVE_FILE" 2>> "${LOG_FILE}"
 	fi
-	#
+
+	log_action "       > IPSET tables for $IPV4_IPSET_NAME and $IPV6_IPSET_NAME have been recreated and updated."
 	log_action "     > Checking or updating IPTABLES rules."
 	check_update_iptables_rules
 	email_to_send=true
@@ -945,24 +1075,18 @@ implement_ips_from_file() {
 	#
 	if [ "$network_type" == "dual" ] || [ "$network_type" == "ipv4" ]
 		then
-			if ! ipset list "$IPV4_IPSET_NAME" &>/dev/null
-				then
-					log_action "       - Creating IPSET $IPV4_IPSET_NAME as it does not exist."
-					ipset create $IPV4_IPSET_NAME hash:net family inet >> "${LOG_FILE}" 2>&1
-				else
-					log_action "       - IPSET $IPV4_IPSET_NAME already exists. Not creating."
-			fi
+			log_action "     > Recreating IPSET $IPV4_IPSET_NAME"
+			ipset flush "$IPV4_IPSET_NAME" &>/dev/null || true
+			ipset destroy "$IPV4_IPSET_NAME" &>/dev/null || true
+			ipset create $IPV4_IPSET_NAME hash:net family inet hashsize $IPSET_HASH_SIZE maxelem $IPSET_MAX_ELEM >> "${LOG_FILE}" 2>&1
 	fi
 	#
 	if [ "$network_type" == "dual" ] || [ "$network_type" == "ipv6" ]
 		then
-			if ! ipset list "$IPV6_IPSET_NAME" &>/dev/null
-				then
-					log_action "       - Creating IPSET $IPV6_IPSET_NAME as it does not exist."
-					ipset create $IPV6_IPSET_NAME hash:net family inet6 >> "${LOG_FILE}" 2>&1
-				else
-					log_action "       - IPSET $IPV6_IPSET_NAME already exists. Not creating."
-			fi
+			log_action "     > Recreating IPSET $IPV6_IPSET_NAME"
+			ipset flush "$IPV6_IPSET_NAME" &>/dev/null || true
+			ipset destroy "$IPV6_IPSET_NAME" &>/dev/null || true
+			ipset create $IPV6_IPSET_NAME hash:net family inet6 hashsize $IPSET_HASH_SIZE maxelem $IPSET_MAX_ELEM >> "${LOG_FILE}" 2>&1
 	fi
 	#
 	# Check if the IPV4_IPSET save file exists
@@ -1100,7 +1224,7 @@ if [ -e "${PIDFILE}" ]
 		fi
 fi
 #
-# Créer le fichier PID
+# Create PID file
 echo $$ > "${PIDFILE}"
 #
 # Ensure the PID file is deleted when the script exits or is interrupted
