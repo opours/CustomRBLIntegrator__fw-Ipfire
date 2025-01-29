@@ -111,6 +111,8 @@ case "$1" in
   start)
         ## add your 'start' rules here
 	# Run CustomRBLIntegrator
+	echo "   > Run CustomRBLIntegrator..."
+	echo "   > Run CustomRBLIntegrator..." >> "$LOG_FILE"
 	/bin/bash /usr/local/bin/CustomRBLIntegrator/CustomRBLIntegrator.sh -c >>"${LOG_FILE}" 2>&1
 	;;
   stop)
