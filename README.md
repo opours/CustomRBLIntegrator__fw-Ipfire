@@ -1,6 +1,6 @@
 ---
 meta:
-    author: Mickaël DUBARD (www.opours.net)
+    author(s): Mickaël DUBARD (www.opours.net) - AI assisted
     topic: CustomRBLIntegrator - Ipfire
 ---
 
